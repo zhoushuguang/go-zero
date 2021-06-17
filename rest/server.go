@@ -34,6 +34,8 @@ func MustNewServer(c RestConf, opts ...RunOption) *Server {
 		log.Fatal(err)
 	}
 
+	logx.Infof("hello zsg")
+
 	return engine
 }
 
