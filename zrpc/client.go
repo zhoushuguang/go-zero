@@ -24,6 +24,8 @@ var (
 	// WithBlock sets the dialing to be blocking.
 	// Deprecated: blocking dials are not recommended by gRPC.
 	WithBlock = internal.WithBlock
+	// WithBreakerStrategy is an alias of internal.WithBreakerStrategy.
+	WithBreakerStrategy = internal.WithBreakerStrategy
 	// WithStreamClientInterceptor is an alias of internal.WithStreamClientInterceptor.
 	WithStreamClientInterceptor = internal.WithStreamClientInterceptor
 	// WithTimeout is an alias of internal.WithTimeout.
@@ -79,6 +81,7 @@ func NewClient(c RpcClientConf, options ...ClientOption) (Client, error) {
 	svcCfg := makeLBServiceConfig(c.BalancerName)
 	opts = append(opts, WithDialOption(grpc.WithDefaultServiceConfig(svcCfg)))
 
+	opts = append(opts, WithBreakerStrategy(c.BreakerStrategy))
 	opts = append(opts, options...)
 
 	target, err := c.BuildTarget()

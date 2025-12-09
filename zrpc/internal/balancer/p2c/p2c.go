@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"path"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -12,6 +13,7 @@ import (
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/syncx"
 	"github.com/zeromicro/go-zero/core/timex"
+	bal "github.com/zeromicro/go-zero/zrpc/internal/balancer"
 	"github.com/zeromicro/go-zero/zrpc/internal/codes"
 	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/balancer/base"
@@ -79,7 +81,7 @@ type p2cPicker struct {
 	lock  sync.Mutex
 }
 
-func (p *p2cPicker) Pick(_ balancer.PickInfo) (balancer.PickResult, error) {
+func (p *p2cPicker) Pick(info balancer.PickInfo) (balancer.PickResult, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -112,9 +114,15 @@ func (p *p2cPicker) Pick(_ balancer.PickInfo) (balancer.PickResult, error) {
 	atomic.AddInt64(&chosen.inflight, 1)
 	atomic.AddInt64(&chosen.requests, 1)
 
+	breakerName := path.Join(chosen.addr.Addr, info.FullMethodName)
+	doneFn, err := bal.WrapDoneWithBreakerCtx(info.Ctx, breakerName, p.buildDoneFunc(chosen))
+	if err != nil {
+		return emptyPickResult, err
+	}
+
 	return balancer.PickResult{
 		SubConn: chosen.conn,
-		Done:    p.buildDoneFunc(chosen),
+		Done:    doneFn,
 	}, nil
 }
 

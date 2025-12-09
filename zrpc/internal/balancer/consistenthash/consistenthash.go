@@ -2,11 +2,14 @@ package consistenthash
 
 import (
 	"context"
+	"path"
 
 	"github.com/zeromicro/go-zero/core/hash"
+	bal "github.com/zeromicro/go-zero/zrpc/internal/balancer"
 	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/balancer/base"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/status"
 )
 
@@ -30,7 +33,12 @@ type (
 	// picker is a picker that uses consistent hash to pick a sub connection.
 	picker struct {
 		hashRing *hash.ConsistentHash
-		conns    map[string]balancer.SubConn
+		conns    map[string]subConn
+	}
+	// subConn is a sub connection with its address.
+	subConn struct {
+		addr resolver.Address
+		conn balancer.SubConn
 	}
 )
 
@@ -40,11 +48,14 @@ func (b *pickerBuilder) Build(info base.PickerBuildInfo) balancer.Picker {
 		return base.NewErrPicker(balancer.ErrNoSubConnAvailable)
 	}
 
-	conns := make(map[string]balancer.SubConn, len(readySCs))
+	conns := make(map[string]subConn, len(readySCs))
 	hashRing := hash.NewCustomConsistentHash(defaultReplicaCount, hash.Hash)
 	for conn, connInfo := range readySCs {
 		addr := connInfo.Address.Addr
-		conns[addr] = conn
+		conns[addr] = subConn{
+			addr: connInfo.Address,
+			conn: conn,
+		}
 		hashRing.Add(addr)
 	}
 
@@ -78,7 +89,16 @@ func (p *picker) Pick(info balancer.PickInfo) (balancer.PickResult, error) {
 				"[consistent_hash] no subConn for addr: %s", addr)
 		}
 
-		return balancer.PickResult{SubConn: subConn}, nil
+		breakerName := path.Join(subConn.addr.Addr, info.FullMethodName)
+		doneFn, err := bal.WrapDoneWithBreakerCtx(info.Ctx, breakerName, nil)
+		if err != nil {
+			return emptyPickResult, err
+		}
+
+		return balancer.PickResult{
+			SubConn: subConn.conn,
+			Done:    doneFn,
+		}, nil
 	}
 
 	return emptyPickResult, status.Errorf(codes.Unavailable,

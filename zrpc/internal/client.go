@@ -31,10 +31,11 @@ type (
 
 	// A ClientOptions is a client options.
 	ClientOptions struct {
-		NonBlock    bool
-		Timeout     time.Duration
-		Secure      bool
-		DialOptions []grpc.DialOption
+		NonBlock        bool
+		Timeout         time.Duration
+		Secure          bool
+		BreakerStrategy string
+		DialOptions     []grpc.DialOption
 	}
 
 	// ClientOption defines the method to customize a ClientOptions.
@@ -80,7 +81,7 @@ func (c *client) buildDialOptions(opts ...ClientOption) []grpc.DialOption {
 	}
 
 	options = append(options,
-		grpc.WithChainUnaryInterceptor(c.buildUnaryInterceptors(cliOpts.Timeout)...),
+		grpc.WithChainUnaryInterceptor(c.buildUnaryInterceptors(cliOpts.Timeout, cliOpts.BreakerStrategy)...),
 		grpc.WithChainStreamInterceptor(c.buildStreamInterceptors()...),
 	)
 
@@ -97,7 +98,7 @@ func (c *client) buildStreamInterceptors() []grpc.StreamClientInterceptor {
 	return interceptors
 }
 
-func (c *client) buildUnaryInterceptors(timeout time.Duration) []grpc.UnaryClientInterceptor {
+func (c *client) buildUnaryInterceptors(timeout time.Duration, breakerStrategy string) []grpc.UnaryClientInterceptor {
 	var interceptors []grpc.UnaryClientInterceptor
 
 	if c.middlewares.Trace {
@@ -110,7 +111,7 @@ func (c *client) buildUnaryInterceptors(timeout time.Duration) []grpc.UnaryClien
 		interceptors = append(interceptors, clientinterceptors.PrometheusInterceptor)
 	}
 	if c.middlewares.Breaker {
-		interceptors = append(interceptors, clientinterceptors.BreakerInterceptor)
+		interceptors = append(interceptors, clientinterceptors.BreakerInterceptor(breakerStrategy))
 	}
 	if c.middlewares.Timeout {
 		interceptors = append(interceptors, clientinterceptors.TimeoutInterceptor(timeout))
@@ -176,6 +177,13 @@ func WithStreamClientInterceptor(interceptor grpc.StreamClientInterceptor) Clien
 func WithTimeout(timeout time.Duration) ClientOption {
 	return func(options *ClientOptions) {
 		options.Timeout = timeout
+	}
+}
+
+// WithBreakerStrategy returns a func to customize a ClientOptions with given breaker strategy.
+func WithBreakerStrategy(strategy string) ClientOption {
+	return func(options *ClientOptions) {
+		options.BreakerStrategy = strategy
 	}
 }
 
